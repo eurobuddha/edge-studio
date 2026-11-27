@@ -31,6 +31,8 @@ Edge Studio code and documentation are available under the [MIT License](LICENSE
 
 ## Installation On Raspberry Pi
 
+Testing changes from your own fork? Follow [the fork-to-Pi installation checklist](docs/guides/contributor-quickstart.md#fork-source-build-on-a-disposable-pi), which builds your branch with `DEV_MODE=true` and verifies the expected commit. The normal command below installs the official release.
+
 Run:
 
 ```bash
@@ -45,7 +47,7 @@ If another application uses one of Edge Studio's ports, use the guided installer
 curl -fsSL https://raw.githubusercontent.com/edge-studio-technology/edge-studio/main/install.sh | sudo bash -s -- --advanced
 ```
 
-The installer asks for the HTTPS frontend, Minima peer-to-peer, Minima local RPC, host agent, camera helper, sensor helper, and MQTT broker ports. Press Enter to keep the displayed value. Existing installations show saved values; explicit environment overrides take precedence over saved values. Optional service ports are saved even while those services are disabled. The backend and update-agent use internal Docker ports and need no host port selection. Advanced mode changes port numbers only; Minima RPC keeps its configured bind address (`127.0.0.1` by default), and optional services remain disabled unless explicitly enabled.
+The installer asks for the HTTPS frontend, Minima peer-to-peer, Minima local RPC, host agent, camera helper, sensor helper, MQTT broker, and SPI display helper ports. Press Enter to keep the displayed value. Existing installations show saved values; explicit environment overrides take precedence over saved values. Optional service ports are saved even while those services are disabled. The backend and update-agent use internal Docker ports and need no host port selection. Advanced mode changes port numbers only; Minima RPC keeps its configured bind address (`127.0.0.1` by default), and optional services remain disabled unless explicitly enabled.
 
 Both installation modes validate port numbers (1–65535), require distinct host ports, and check ports for services being started before installing packages or changing application files. Conflicts report the service and port, with instructions to rerun using `--advanced`. Running containers and helpers belonging to the same installation are allowed during reruns. These checks are a snapshot; another process can still claim a port before startup. Disabled optional services' ports are saved but are not checked for availability or reserved on the host.
 
@@ -55,7 +57,7 @@ Advanced mode reads answers from the terminal, including when the installer is p
 curl -fsSL https://raw.githubusercontent.com/edge-studio-technology/edge-studio/main/install.sh | sudo env FRONTEND_PORT=8443 MINIMA_P2P_PORT=19003 bash
 ```
 
-Other port variables are `MINIMA_RPC_PORT`, `HOST_AGENT_PORT`, `CAMERA_HELPER_PORT`, `SENSOR_HELPER_PORT`, and `MQTT_PUBLIC_PORT`. The preflight requires Python 3; if it is missing, run `sudo apt-get install python3` first. If Docker is already installed, its daemon must be running for the publication check. After installation, use the HTTPS URL printed by the installer with your selected frontend port.
+Other port variables are `MINIMA_RPC_PORT`, `HOST_AGENT_PORT`, `CAMERA_HELPER_PORT`, `SENSOR_HELPER_PORT`, `MQTT_PUBLIC_PORT`, and `DISPLAY_HELPER_PORT`. The preflight requires Python 3; if it is missing, run `sudo apt-get install python3` first. If Docker is already installed, its daemon must be running for the publication check. After installation, use the HTTPS URL printed by the installer with your selected frontend port.
 
 ### Verified Install (recommended)
 
@@ -109,13 +111,19 @@ After install, an admin can enable or disable camera support from Devices -> Har
 
 `ENABLE_CAMERA=true` does not install host camera drivers or enable the Raspberry Pi camera stack. Before using camera workflows, verify the Pi host can see the camera with `libcamera-still --list-cameras` or `rpicam-still --list-cameras`. Camera Module 3 (`imx708`) requires a host OS/kernel/libcamera stack that supports it. The helper uses the host camera tools, not camera binaries inside the backend container.
 
-Advanced: to enable BME280/BME680 I2C environmental sensor devices during install, pass `ENABLE_SENSORS=true`:
+Advanced: to enable BME280/BME680 environmental or BH1750 light sensor devices over I2C during install, pass `ENABLE_SENSORS=true`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/edge-studio-technology/edge-studio/main/install.sh | sudo env ENABLE_SENSORS=true bash
 ```
 
 `ENABLE_SENSORS=true` installs and starts a host-side `edge-studio-sensor-helper` systemd service, generates a `SENSOR_HELPER_TOKEN`, and writes backend configuration so the Docker backend can call the helper through the fixed Edge Studio Compose gateway. Leave it disabled unless this deployment needs direct I2C sensor reads. The Pi's I2C interface must also be enabled on the host, and the Pi may need a reboot before `/dev/i2c-1` appears. BME680 reads require the Python `bme680` module; the installer creates a dedicated sensor-helper virtualenv and installs the module there when sensor support is enabled.
+
+BH1750 light sensors use the same opt-in helper and report `lux` through manual reads or workflow **Fetch data source** blocks. After updating an existing installation, **Repair I2C sensors** installs `smbus2` in the managed sensor-helper virtualenv and restarts the helper. For Adafruit STEMMA QT product 4681, wire VIN to 3.3V, GND to ground, SCL to physical pin 5 and SDA to physical pin 3; use bus `1`, address `0x23` unless the board address has been changed to `0x5c`. See the [BH1750 setup guide and physical verification status](docs/guides/bh1750-sensor.md).
+
+Pimoroni PIM576 SPI LCD output is available through **Devices → Hardware support → SPI displays** and the existing workflow **Control device** block. It uses a token-protected host helper, SPI0 CE0, DC GPIO25 and backlight GPIO24. Enable/Repair installs the exact, hash-verified CPython 3.13/Debian 13 aarch64 dependency set in `display-helper/requirements.lock`; installer refresh preserves that environment, token and configured port. The advanced `ENABLE_DISPLAYS=true` shortcut enables it during installation after host SPI prerequisites are present. First adoption on an existing installation requires an installer refresh to add the new helper files. It remains off by default, requires no backend SPI/GPIO mount, and is physically verified on the documented Pi 4/Debian 13 setup. See [PIM576 wiring, custom-variable starter workflow and scoped verification evidence](docs/guides/pim576-display.md).
+
+SPI prerequisites can be configured explicitly from **Hardware support → SPI displays → Automatic setup** on hosts with `apt-get` and `raspi-config`. The app installs Python prerequisites, enables SPI and reports whether a reboot is needed. It does not reboot or enable the helper automatically. **Manual setup** remains available for other host configurations.
 
 Advanced: to enable the optional local MQTT broker during install, pass `ENABLE_MQTT_BROKER=true`:
 
@@ -241,6 +249,9 @@ INTEGRITAS_POLL_INTERVAL_SECONDS=30
 INTEGRITAS_PROOF_POLL_TIMEOUT_MINUTES=5
 INTEGRITAS_DEVICE_POLL_INTERVAL_SECONDS=5
 INTEGRITAS_PORTAL_URL=
+MARKETPLACE_URL=
+MARKETPLACE_INSTALLATION_KEY=
+MARKETPLACE_DELIVERY_SECRET=
 COOKIE_SECURE=true
 # Legacy one-time seeds; manage session limits in Settings -> Security afterwards.
 # SESSION_MAX_AGE_DAYS=7
@@ -375,6 +386,8 @@ curl -fsSL https://raw.githubusercontent.com/edge-studio-technology/edge-studio/
 ```
 
 ## Local Development
+
+`npm run audit:moderate` checks development and production dependencies in backend, frontend and update-agent. A narrowly scoped picomatch development advisory exception expires on 2026-12-02; see [the accepted risk and audit boundaries](docs/adr/0044-time-limit-the-development-picomatch-audit-exception.md). Other moderate or higher findings remain blocking.
 
 Copy the example environment file:
 
@@ -577,6 +590,39 @@ If the Integritas API key is missing or the hosted endpoint is unavailable, the 
 
 The CLI does not send session cookies in V1. Operational CLI commands that call protected APIs return `401 Unauthorized` until a future CLI auth story is added. Use the browser UI for authenticated operations.
 
+## Data Marketplace
+
+**Marketplace** in the sidebar connects this installation to the Edge Studio Data Marketplace, a separate service where data from Integritas-verified devices is sold. It is off until configured.
+
+1. Ask the marketplace operator for this installation's key (`esk_...`). Set it with the marketplace address in `.env`:
+
+   ```env
+   MARKETPLACE_URL=https://marketplace.example
+   MARKETPLACE_INSTALLATION_KEY=esk_...
+   # Only when you run the local delivery service (below):
+   MARKETPLACE_DELIVERY_SECRET=<openssl rand -hex 32>
+   ```
+
+   A local staging marketplace may use a private test CA. Put its public root certificate in the installation's
+   data directory and set `MARKETPLACE_CA_CERT_PATH=/data/marketplace-ca.crt`. Leave this empty for a marketplace
+   with publicly trusted HTTPS; never copy a CA private key into Edge Studio.
+
+2. Recreate the backend container (`docker compose up -d backend`) so it reads the new values. A reinstall keeps them. `MARKETPLACE_URL` must be `https`; plain `http` is accepted only for `localhost`/`127.0.0.1` during development.
+3. Open **Marketplace**. The page says whether the marketplace is configured and where it points.
+
+The page has two tabs:
+
+- **My listings** lists your listings on the marketplace. With none yet, it explains how to create one and opens the listing wizard. The wizard offers exactly two product types: **Dataset/File** (one-off purchase, seller-hosted download) and **Live Stream** (monthly subscription, seller-hosted stream); billing and delivery method follow the type. Drafts are published, paused and unpublished from the list. Only your own sources are offered, and only verified ones can be chosen. The payout wallet is changed on the marketplace website, never from Edge Studio.
+- **Catalogue** searches all published listings by words, category and type. **Buy on marketplace** opens the listing on the marketplace website in a new tab, so purchases use the same checkout and entitlements as any buyer. **Details** fetches the listing fresh, with the seller's live delivery status.
+
+If the marketplace cannot be reached, the page shows "Marketplace service unavailable" (listings) or "Marketplace unavailable" (catalogue) with **Retry**; earlier results are hidden rather than shown as live. The rest of Edge Studio is unaffected.
+
+**What leaves the Pi.** The backend pushes each input device (not output targets) to the marketplace at start-up and whenever a device is added, edited or deleted, or one of its Integritas proofs becomes ready: the device's ID and name, whether it is verified, its number of ready proofs and its newest ready proof (proof reference `integritas:uid:<uid>`, the SHA3-256 data fingerprint, the time it was stamped and the Minima node's Maxima public key). Device configuration, readings and credentials are never sent. Deleted devices are removed from the marketplace. If the marketplace is unreachable, pushes retry every minute while the backend runs.
+
+**Roles.** Edge Studio has one local role, `admin`, which acts on the marketplace as the installation's `owner` (may create and publish listings). The marketplace's read-only `viewer` role is supported by the page, but no Edge Studio role maps to it yet, and the marketplace's delegated `publisher` role is not used.
+
+**Local delivery service.** The publisher's delivery service (a separate program) reports to the marketplace through Edge Studio, because only Edge Studio holds the installation key. It calls Edge Studio's HTTPS address (the same one the browser uses, with its certificate) and authenticates with `Authorization: Bearer <MARKETPLACE_DELIVERY_SECRET>`. See [Backend API](#backend-api) for the two endpoints.
+
 ## CLI
 
 The browser UI and CLI both call the same backend API. The backend does not run arbitrary shell commands, and the CLI does not duplicate business logic.
@@ -750,6 +796,7 @@ backend container
   - Device protocols currently include HTTP JSON API fetches, BME280/BME680 I2C sensor reads, webhook JSON receives, MQTT JSON subscriptions, Raspberry Pi GPIO input events, HC-SR501-style PIR motion events, and Raspberry Pi GPIO LED output targets. Devices define connection details; Automation workflows decide whether reads are recorded, outputs are controlled, and hashes are stamped. GPIO LED output targets can also be test-pulsed from the Devices page before adding them to a workflow.
   - Event-driven workflow start blocks support a cooldown between runs. GPIO starts can also ignore inactive edges, which is recommended for PIR motion workflows so `motion_cleared` does not trigger notifications or output actions.
   - Automation workflows are block-based. Start blocks trigger ordered action blocks; logic blocks can stop the remaining flow when selected trigger or data fields do not match; Integritas stamping is attached as a side block to record/fetch data blocks so it stamps that block's hash without becoming the final step in the main flow. Attached stamp blocks can also have their own field condition against the trigger event or recorded/fetched data. New workflow creation uses a Scratch-inspired draft workspace with a clean Start/Data/Logic/Action block library, a visual block-chain canvas, setup inspector, and backend-powered inline validation. The draft starts empty, requires one start block first, hides start blocks after selection, and uses Reset canvas when the operator wants a different trigger. Create/edit/watch workspaces are URL-driven (`/workflows/new`, `/workflows/:id/edit`, `/workflows/:id/watch`) and render in the page rather than opening workflow editing in a modal. Build, Edit, and Watch share one workspace shell and normalized canvas renderer. Canvas blocks show validation error/warning badges in Build/Edit and selected run status/duration in Watch. Edit mode shares the builder shell, categorized block library, selected-block inspector pattern, workflow name editing, and right-side validation placement; Watch mode owns run controls, test payload execution, selected-block runtime output/error/timing, read/proof Diagnostics links, and a historic run picker that visualizes selected runs on the canvas. Draft action blocks include Pulse output and Send transaction; Integritas stamps attach as side blocks on Record/Fetch data blocks. Templates are intentionally deferred until the basic block building experience is complete. Block edits are saved per block with visible unsaved/saved feedback; add/remove/move/pause/enable actions apply immediately. Workflow validation flags broken block chains, missing devices, output/transaction risks, and missing Integritas key setup before manual runs; validation errors block `Run now` / `Run with payload`, while warnings stay visible for operator review. Workflow logs show the run trigger plus block outputs, and fetch/record blocks link their stored read preview so operators can see the JSON that conditions evaluated. Workflow lists support search, status filters, duplicate, archive, restore, and delete; archived workflows do not run automatically or manually until restored. Automation can also send native MINIMA (`0x00`) transactions to saved address book recipients through an allowlisted Send transaction block. Prototype workflows created with older equals-only condition configs should be recreated.
+  - Standalone If field matches supports **changed by at least** for finite numeric inputs, comparing absolute change against a persisted baseline from the last successful, non-stopped workflow. The first reading passes, small changes accumulate, and condition identity edits reset the baseline.
   - HTTP and BME sensor Fetch data blocks poll/read on workflow runs. Webhook Collect data rules record pushed JSON at generated `/api/data-source-webhooks/:token` URLs while enabled. MQTT Collect data rules subscribe to the configured broker/topic only while enabled. GPIO Collect data rules watch configured BCM pins only while enabled. Webhook ingestion allows 60 requests per minute per client and source, and a workflow can make at most 1,000 runs per rolling hour that reach payment, device output, camera, or stamp blocks; both return `429` when exceeded (see `SECURITY.md`).
   - Reads /host-files only
   - Reads Minima status from http://minima:9005/status
@@ -894,6 +941,31 @@ The address book hides the pending destination and refreshes it every 30 seconds
 Empty/invalid/offline discovery keeps the local recipient pending and retries later. Completion remains durably uncertain until the RPC returns, including across a backend restart during replacement. If the RPC throws or times out, a pool still containing the old address is insufficient to confirm completion: the contact stays blocked until a different destination is verified or a subsequent replacement request completes and is verified. Replacing wallet files or calling RPC outside Edge Studio does not notify this mechanism. Reroll is out of scope.
 
 `POST /api/wallet/receive-address` samples a random default address from the wallet pool for the Receive QR view. It can differ from the stable This device destination; both belong to the wallet when verified.
+
+Data Marketplace (session required; listing create/edit/transition are admin-only):
+
+```http
+GET   /api/marketplace/status
+GET   /api/marketplace/publisher/sources
+GET   /api/marketplace/publisher/listings
+GET   /api/marketplace/publisher/earnings
+POST  /api/marketplace/publisher/listings
+PATCH /api/marketplace/publisher/listings/:id
+POST  /api/marketplace/publisher/listings/:id/transitions
+GET   /api/marketplace/catalogue?q=&category=&type=
+GET   /api/marketplace/catalogue/:id
+```
+
+`GET /api/marketplace/status` returns `{ configured, url, role }`; it never returns the installation key or delivery secret. The other routes call the marketplace route of the same name with the installation key, the signed-in user's ID and the mapped role (`admin` → `owner`). A transition forwards only `{ to }`. When the marketplace is not configured the backend answers `503` with `errorCode: "marketplace_not_configured"`; when it cannot be reached or answers 5xx, `503` with `errorCode: "marketplace_unavailable"`. Marketplace `401/403/404/409/422` answers pass through with their status, a readable `error`, `field` when the marketplace named one, and `errorCode: "marketplace_<marketplace error>"`.
+
+Data Marketplace delivery service (no session; `Authorization: Bearer <MARKETPLACE_DELIVERY_SECRET>`):
+
+```http
+PUT  /api/marketplace/delivery/sources/:id/address     { "address": "https://host[:port]" | null }
+POST /api/marketplace/delivery/sources/:id/heartbeat   { "lastDataAt"?: "<ISO time>", "intervalSeconds"?: <int> }
+```
+
+`:id` is the Edge Studio device ID, URL-encoded. The address change is forwarded to the marketplace's `PUT /api/integration/sources/:id/delivery` as `owner`; `null` clears it. The heartbeat is forwarded to `POST /api/integration/sources/:id/heartbeat` as `publisher`, with only `lastDataAt` and `intervalSeconds`. Both act as user `edge-studio`. A missing or wrong secret, or an unset `MARKETPLACE_DELIVERY_SECRET`, answers `401`; an address that is neither a string nor `null` answers `400`. Otherwise the answer follows the rules above: `2xx` when the marketplace accepted it, the marketplace's own `4xx` (for example `404` for an unknown device or `422` for an address that is not a public `https` origin), and `503` when the marketplace cannot be reached. The delivery service retries on its next beat.
 
 Integritas:
 

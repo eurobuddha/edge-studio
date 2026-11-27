@@ -64,6 +64,9 @@ const MB = 1024 * 1024;
 const databasePath = resolveDatabasePath();
 
 export const env = {
+  displaysEnabled: process.env.ENABLE_DISPLAYS === "true",
+  displayHelperUrl: process.env.DISPLAY_HELPER_URL ?? "http://host.docker.internal:38183",
+  displayHelperToken: process.env.DISPLAY_HELPER_TOKEN ?? "",
   port: Number(process.env.PORT ?? 3000),
   buildVersion: process.env.EDGE_STUDIO_BUILD_VERSION ?? "unknown",
   buildCommit: process.env.EDGE_STUDIO_BUILD_COMMIT ?? "unknown",
@@ -77,6 +80,10 @@ export const env = {
   integritasProofPollTimeoutMinutes: Number(process.env.INTEGRITAS_PROOF_POLL_TIMEOUT_MINUTES ?? 5),
   integritasDevicePollIntervalSeconds: Number(process.env.INTEGRITAS_DEVICE_POLL_INTERVAL_SECONDS ?? 5),
   integritasPortalUrl: process.env.INTEGRITAS_PORTAL_URL ?? "",
+  // Data Marketplace (deployment configuration, ADR 0041). The installation key is server-side only.
+  marketplaceUrl: process.env.MARKETPLACE_URL ?? "",
+  marketplaceInstallationKey: process.env.MARKETPLACE_INSTALLATION_KEY ?? "",
+  marketplaceDeliverySecret: process.env.MARKETPLACE_DELIVERY_SECRET ?? "",
   databasePath,
   dataDir: resolveDataDir(databasePath),
   appSecret: process.env.APP_SECRET ?? "",
